@@ -5,6 +5,7 @@
  * Created on May 11, 2022, 6:23 PM
  */
 
+
 // CONFIG1
 #pragma config FOSC = INTRC_NOCLKOUT// Oscillator Selection bits (INTOSCIO oscillator: I/O function on RA6/OSC2/CLKOUT pin, I/O function on RA7/OSC1/CLKIN)
 #pragma config WDTE = OFF       // Watchdog Timer Enable bit (WDT disabled and can be enabled by SWDTEN bit of the WDTCON register)
@@ -27,6 +28,10 @@
  * CONSTANTES 
  ------------------------------------------------------------------------------*/
 #define _XTAL_FREQ 1000000
+#define IN_MIN 0                // Valor minimo de entrada del potenciometro
+#define IN_MAX 255              // Valor máximo de entrada del potenciometro
+#define OUT_MIN 62               // Valor minimo de ancho de pulso de señal PWM
+#define OUT_MAX 125             // Valor máximo de ancho de pulso de señal PWM
 /*------------------------------------------------------------------------------
  * VARIABLES 
  ------------------------------------------------------------------------------*/
@@ -34,20 +39,26 @@ char cont_master = 0;
 char cont_slave = 0xFF;
 char cont = 0;
 char cont2 = 0;
+unsigned short CCPR = 0;        // Variable para almacenar ancho de pulso al hacer la interpolación lineal
 /*------------------------------------------------------------------------------
  * PROTOTIPO DE FUNCIONES 
  ------------------------------------------------------------------------------*/
 void setup(void);
+
+void setup(void);
+unsigned short map(uint8_t val, uint8_t in_min, uint8_t in_max, 
+            unsigned short out_min, unsigned short out_max);
 /*------------------------------------------------------------------------------
  * INTERRUPCIONES 
  ------------------------------------------------------------------------------*/
 void __interrupt() isr (void){
     if (PIR1bits.SSPIF){
+        CCPR = map(SSPBUF, IN_MIN, IN_MAX, OUT_MIN, OUT_MAX); // Valor de ancho de pulso variable
+        CCPR1L = (uint8_t)(CCPR>>2);    // Se guardan los 8 bits más significativos en CPR1L
+        CCP1CONbits.DC1B = CCPR & 0b11; // Se guardan los 2 bits menos significativos en DC1B
         
-        cont = SSPBUF;
-        PORTD = cont;       // guardamos el dato en PORTD
-        PIR1bits.SSPIF = 0;             // Limpiamos bandera de interrupci n?
-    }
+        PIR1bits.SSPIF = 0;  // Limpiamos bandera de interrupción
+    }   
     return;
 }
 /*------------------------------------------------------------------------------
@@ -55,8 +66,8 @@ void __interrupt() isr (void){
  ------------------------------------------------------------------------------*/
 void main(void) {
     setup();
-    while(1){        
-        // Envio y recepcion de datos en maestro
+    while(1){       
+         
     }
     return;
 }
@@ -66,9 +77,6 @@ void main(void) {
 void setup(void){
     ANSEL = 0;
     ANSELH = 0;
-    
-    TRISD = 0;
-    PORTD = 0;
     
     TRISA = 0b00100001;
     PORTA = 0;
@@ -93,4 +101,30 @@ void setup(void){
     PIE1bits.SSPIE = 1;         // Habilitamos int. de SPI
     INTCONbits.PEIE = 1;
     INTCONbits.GIE = 1;
+    
+    //Config PWM
+    CCP1CON = 0; // Se apaga CCP1
+    TRISCbits.TRISC2 = 1; // RC2/CCP1 como salida deshabilitado
+    PR2 = 255; // Período de 16 ms 
+    
+    // Config CCP
+    CCP1CONbits.P1M = 0;        // Modo single output
+    CCP1CONbits.CCP1M = 0b1100; // Modo PWM
+    
+    CCPR1L = 61; //Ciclo de trabajo base pues se va a variar
+    CCP1CONbits.DC1B = 61 & 0b11; // Base de 1 ms ancho de pulso
+    
+    PIR1bits.TMR2IF = 0;        // Limpieza de bandera del TMR2
+    T2CONbits.T2CKPS = 0b11;    // Prescaler 1:16
+    T2CONbits.TMR2ON = 1;       // Se enciende TMR2
+    while(!PIR1bits.TMR2IF);    // Se espera un ciclo del TMR2
+    PIR1bits.TMR2IF = 0;        // Limpieza de bandera del TMR2 nuevamente
+    
+    TRISCbits.TRISC2 = 0;       // Se habilita salida de PWM
+
+}
+
+unsigned short map(uint8_t x, uint8_t x0, uint8_t x1, 
+            unsigned short y0, unsigned short y1){
+    return (unsigned short)(y0+((float)(y1-y0)/(x1-x0))*(x-x0));
 }
