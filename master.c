@@ -31,10 +31,8 @@
 /*------------------------------------------------------------------------------
  * VARIABLES 
  ------------------------------------------------------------------------------*/
-char cont_master = 0;
-char cont_slave = 0xFF;
 char cont = 0;
-
+char cont_master = 0;
 /*------------------------------------------------------------------------------
  * PROTOTIPO DE FUNCIONES 
  ------------------------------------------------------------------------------*/
@@ -47,10 +45,9 @@ void __interrupt() isr (void){
     if(PIR1bits.ADIF){              // Fue interrupción del ADC?
             if(ADCON0bits.CHS == 1){    // Verificamos sea AN0 el canal seleccionado
                 cont = ADRESH;         // Mostramos ADRESH en PORTC
-                PORTB = ADRESH;
             }
-        PIR1bits.ADIF = 0;          // Limpiamos bandera de interrupción
-    }
+        PIR1bits.ADIF = 0;          // Limpiamos bandera de interrupci?n
+    } 
     return;
 }
 /*------------------------------------------------------------------------------
@@ -62,19 +59,29 @@ void main(void) {
         
         if(ADCON0bits.GO == 0){ 
             __delay_us(40);
-            ADCON0bits.GO = 1;              // Iniciamos proceso de conversión
+            ADCON0bits.GO = 1;              // Iniciamos proceso de conversi?n
         }
         
         // cambio en el selector (SS) para generar respuesta del pic
-        PORTAbits.RA0 = 1;      // Deshabilitamos el ss del esclavo
+        PORTAbits.RA6 = 1;      // Deshabilitamos el ss del esclavo
         __delay_ms(10);         // Delay para que el PIC pueda detectar el cambio en el pin
-        PORTAbits.RA0 = 0;      // habilitamos nuevamente el escalvo
+        PORTAbits.RA5 = 0;      // habilitamos nuevamente el escalvo
 
-        // Enviamos el dato 0x55 
+        // Enviamos el dato 
         SSPBUF = cont;   // Cargamos valor del contador al buffer
         while(!SSPSTATbits.BF){}
-
-        __delay_ms(1000);       // Enviamos y pedimos datos cada 1 segundo
+        
+        PORTAbits.RA5 = 1;      // Deshabilitamos ss del mcu2
+        __delay_ms(10);       
+        
+        PORTAbits.RA6 = 0;      // Habilitamos ss del mcu3
+        __delay_ms(10);       
+        
+        SSPBUF = 0xFF; // Master inicia la comunicación y prende el clock
+        while(!SSPSTATbits.BF){} // Esperamos a que reciba datos
+        PORTD = SSPBUF; //Se guarda valor de contador recibido.
+        
+        __delay_ms(100);
     }
     return;
 }
@@ -88,10 +95,7 @@ void setup(void){
     TRISD = 0;
     PORTD = 0;
     
-    TRISB = 0;
-    PORTB = 0;
-    
-    TRISA = 0b00100011;
+    TRISA = 0b00000011;
     PORTA = 0;
     
     OSCCONbits.IRCF = 0b100;    // 1MHz
